@@ -14,7 +14,7 @@
 _start:
     call make_socket
     cmp rax, -1
-    jne socket_fail
+    je socket_fail
     mov rdi, rax
     call bind_socket
     jmp exit_success
@@ -46,20 +46,25 @@ exit_failure:
 #     char             sin_zero[8];  // zero this if you want to
 # };
 bind_socket: 
-    stack_frame 0x10
+    stack_frame 0x18
     mov WORD PTR [rsp], AF_INET          # sin_family
+    mov QWORD PTR [rsp+0x10], rdi        # socket descriptor 
     mov WORD PTR [rsp+0x2], 0x1337       # sin_port 
+
+
+    lea rdi, [rsp+0x2]                   # swap sin_port
+    mov rsi, 2
+    call swap_endian                     # hton bullshit
+
     mov DWORD PTR [rsp+0x4], 0xff000     # in_addr
     mov QWORD PTR [rsp+0x8], 0x10        # sin_zero
     mov rsi, rsp                         # sockaddr_in structure
     mov rdx, 0x10                        # sizeof(sockaddr_in)
+    mov rdi, [rsp+0x10]
     mov rax, SYS_bind 
     syscall 
     leave
     ret
-
-
-
 
 make_socket:
     mov rdi, AF_INET 
@@ -102,12 +107,44 @@ null_found:
     leave
     ret
 
+# @rdi void * dest 
+# @rsi  void * src 
+# @rdx size 
+memcpy:
+    stack_frame 0x18
+    mov QWORD PTR [rbp-0x8], rdi     # void * to dest 
+    mov QWORD PTR [rbp-0x10], rsi    # void * to src 
+    mov QWORD PTR [rbp-0x18], rdx    # int size 
+    mov r11, 0
+    continue_copying:
+        cmp r11, [rbp-0x18]
+        jge done 
+        mov sil, BYTE PTR [rsi]
+        mov BYTE PTR [rdi], sil
+        inc rdi 
+        inc rsi
+        inc r11
+        jmp continue_copying
+    done:
+        mov rax,  QWORD PTR [rbp-0x8]
+        leave
+        ret
+
+
 # @rdi void * to buffer to swap 
-# @rsi size of buffer
+# @rsi size of buffer(Only supports up to 64 bit int)
 swap_endian:
-    push rbp 
+    stack_frame 0x18
+    mov QWORD PTR [rbp-0x8], rdi     # void * to buffer
+    mov QWORD PTR [rbp-0x10], rsi    # size of buffer
+    # copy from buffer to our buffer
+    lea rdi, [rbp-0x18]
+    mov rsi, [rbp-0x8]
+    mov rdx, [rbp-0x10]
+    call memcpy
 
-
+    leave
+    ret
 
 
 .section .data
