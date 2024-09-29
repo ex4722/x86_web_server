@@ -29,15 +29,21 @@ exit_success:
 
 exit_failure: 
     lea rdi, [rip+socket_error_str]
-    mov rsi, STDERR
-    call print_string
+    call perror 
     mov rdi, -1
     mov rax, SYS_exit
     syscall
 
+puts:
+    mov rsi, STDOUT
+    call print_string
+    ret
 
-// @rdi String to print 
-// @rsi file descriptor to write to
+perror:
+    mov rsi, STDERR
+    call print_string
+    ret
+
 print_string:
     push rbp 
     mov rbp, rsp
@@ -58,9 +64,6 @@ null_found:
     syscall
     leave
     ret
-
-
-
 
 .section .data
 socket_error_str:
