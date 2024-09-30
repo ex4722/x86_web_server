@@ -13,14 +13,27 @@
     .section .text
 
 _start:
+    stack_frame 0x8
     call make_socket
-    cmp rax, -1                # checks return of make_socket
+    cmp rax, -1                # checks return of socket syscall
     je socket_fail
+    mov [rbp-0x8], rax         # sve socket descriptor 
     mov rdi, rax
     call bind_socket
+    cmp rax, -1                # checks return of bind syscall
+    je bind_fail
+    mov rdi, [rbp-0x8]
+    mov rsi, 0                 # backlog = 0
+    call socket_listen
     jmp exit_success
+
 socket_fail: 
     lea rdi, [rip+socket_error_msg]  # print socket error message
+    call perror 
+    jmp exit_failure
+
+bind_fail: 
+    lea rdi, [rip+bind_error_msg]  # print socket error message
     call perror 
     jmp exit_failure
 
@@ -56,12 +69,12 @@ bind_socket:
     mov WORD PTR [rsp], AF_INET          # sin_family
     mov QWORD PTR [rbp-0x8], rdi         # socket descriptor 
 
-    mov WORD PTR [rsp+0x2], 1337 # sin_port 
+    mov WORD PTR [rsp+0x2], 80           # sin_port 
     lea rdi, [rsp+0x2]                   # swap sin_port
     mov rsi, 2
     call swap_endian                     # htons bullshit
 
-    mov DWORD PTR [rsp+0x4], 0x0100007f     # in_addr
+    mov DWORD PTR [rsp+0x4], 0x00000000     # in_addr
     mov QWORD PTR [rsp+0x8], 0x10        # sin_zero
     mov rsi, rsp                         # sockaddr_in structure
     mov rdx, 0x10                        # sizeof(sockaddr_in)
@@ -76,6 +89,14 @@ make_socket:
     mov rsi, SOCK_STREAM 
     mov rdx, IPPROTO_IP
     mov rax, SYS_socket
+    syscall
+    ret
+
+
+# Listening on socket set's value as passive socket and can be used to accept connections
+socket_listen:
+    mov rdi, rdi 
+    mov rax, SYS_listen 
     syscall
     ret
 
@@ -209,3 +230,5 @@ swap_endian:
     .section .data
 socket_error_msg:
     .ascii "[!] Unable to create socket\n"
+bind_error_msg:
+    .ascii "[!] Unable to bind to socket\n"
