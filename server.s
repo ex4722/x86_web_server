@@ -16,15 +16,19 @@ _start:
     stack_frame 0x8
     call make_socket
     cmp rax, -1                # checks return of socket syscall
-    je socket_fail
+    jle socket_fail
     mov [rbp-0x8], rax         # sve socket descriptor 
     mov rdi, rax
     call bind_socket
     cmp rax, -1                # checks return of bind syscall
-    je bind_fail
+    jle bind_fail
     mov rdi, [rbp-0x8]
     mov rsi, 0                 # backlog = 0
     call socket_listen
+    cmp rax, -1                # checks return of listen syscall
+    jle listen_fail
+    mov rdi, [rbp-0x8]
+    call socket_accept 
     jmp exit_success
 
 socket_fail: 
@@ -34,6 +38,11 @@ socket_fail:
 
 bind_fail: 
     lea rdi, [rip+bind_error_msg]  # print socket error message
+    call perror 
+    jmp exit_failure
+
+listen_fail: 
+    lea rdi, [rip+listen_error_msg]  # print socket error message
     call perror 
     jmp exit_failure
 
@@ -57,7 +66,7 @@ exit_failure:
         short            sin_family;   // e.g. AF_INET, AF_INET6     2 BYTES
         unsigned short   sin_port;     // e.g. htons(3490)           2 BYTES
         struct in_addr {
-        unsigned long s_addr;          // load with inet_pton()  4 BYTES
+            unsigned long s_addr;          // load with inet_pton()  4 BYTES
         };
         char             sin_zero[8];  // zero this if you want to
         };
@@ -100,6 +109,44 @@ socket_listen:
     syscall
     ret
 
+/*
+    socket_accept - Accepts a connection on a socket and binds it to a local address.
+    
+    Parameters:
+        @rdi(u64): Socket file descriptor (socket_fd).
+    
+    PC Does NOT want sockaddr or addrlen but we keeping it for now
+    Stack Frame:
+        =========RSP=========
+        struct sockaddr_in {              // Structure to hold the local address
+            short sin_family;             // Address family (e.g., AF_INET) - 2 bytes
+            unsigned short sin_port;      // Port number in network byte order - 2 bytes
+            struct in_addr {              
+                unsigned long s_addr;     // IP address (4 bytes, typically set with inet_pton)
+            };
+            char sin_zero[8];             // Padding to match the sockaddr structure - 8 bytes
+        } sockaddr_in;
+        
+        u64 * addrlen                     // Length of the sockaddr_in structure
+        u64 @rdi 
+        =========RBP=========
+    
+*/
+socket_accept:
+    stack_frame 0x20
+    mov QWORD PTR [rbp-0x8], rdi 
+    mov QWORD PTR [rbp-0x10], 0x10 # addrlen = sizeof(sockaddr_in)
+    mov rdi, [rbp-0x8]             # socket_fd
+    mov rsi, rsp                   # sockaddr_in
+    lea rdx, [rsi-0x10]            # &addrlen 
+    mov rsi, 0
+    mov rdx, 0
+    mov rax, SYS_accept 
+    syscall
+    leave 
+    ret
+
+
 # Prints string to stdout
 puts:
     mov rsi, STDOUT
@@ -120,8 +167,8 @@ perror:
 
     Stack Frame:
         =========RSP=========
-        [rbp-0x8]  char *: @rdi
         [rbp-0x10] u64: @rsi 
+        [rbp-0x8]  char *: @rdi
         =========RBP=========
 */
 print_string:
@@ -153,9 +200,9 @@ print_string:
     
     Stack Frame:
         =========RSP=========
-        [rbp-0x8]   void *: @rdi 
-        [rbp-0x10]  void *: @rsi 
         [rbp-0x18]  u64: @rdx
+        [rbp-0x10]  void *: @rsi 
+        [rbp-0x8]   void *: @rdi 
         =========RBP=========
 */    
 memcpy:
@@ -188,9 +235,9 @@ memcpy:
     
     Stack Frame:
         =========RSP=========
-        [rbp-0x8]   void *: @rdi
-        [rbp-0x10]  u64:  @rsi
         [rbp-0x18]  Buffer copy for temporary storage (used for endianness swap)
+        [rbp-0x10]  u64:  @rsi
+        [rbp-0x8]   void *: @rdi
         =========RBP=========
 */
 swap_endian:
@@ -232,3 +279,5 @@ socket_error_msg:
     .ascii "[!] Unable to create socket\n"
 bind_error_msg:
     .ascii "[!] Unable to bind to socket\n"
+listen_error_msg:
+    .ascii "[!] Unable to listen to socket\n"
