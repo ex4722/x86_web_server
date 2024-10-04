@@ -29,7 +29,38 @@ _start:
     jle listen_fail
     mov rdi, [rbp-0x8]
     call socket_accept 
+    cmp rax, -1                # checks return of listen syscall
+    jle socket_fail
+
+    mov rdi, rax 
+    call read_request
+
     jmp exit_success
+
+read_request:
+    .equ REQUEST_LINE_SIZE, 0x300
+    stack_frame   REQUEST_LINE_SIZE + 8
+    mov [rbp-0x8], rdi           # socket descriptor 
+    mov rax, SYS_read            # read http request header
+    mov rdx, REQUEST_LINE_SIZE-8 # current max size is 0x32
+    lea rsi, [rbp-REQUEST_LINE_SIZE]        # read onto stack buffer
+    mov rdi, [rbp-0x8]
+    syscall
+
+    lea rsi, [rip+http_200_response]
+    mov rdi, rsi 
+    call strlen
+    mov rdx, rax
+    mov rdi, [rbp-0x8]         # socket descriptor 
+    mov rax, SYS_write
+    syscall
+
+    mov rdi, [rbp-0x8]         # socket descriptor 
+    mov rax, SYS_close
+    syscall
+
+    leave
+    ret
 
 socket_fail: 
     lea rdi, [rip+socket_error_msg]  # print socket error message
@@ -43,6 +74,11 @@ bind_fail:
 
 listen_fail: 
     lea rdi, [rip+listen_error_msg]  # print socket error message
+    call perror 
+    jmp exit_failure
+
+accept_fail: 
+    lea rdi, [rip+accept_error_msg]  # print socket error message
     call perror 
     jmp exit_failure
 
@@ -306,3 +342,7 @@ bind_error_msg:
     .ascii "[!] Unable to bind to socket\n"
 listen_error_msg:
     .ascii "[!] Unable to listen to socket\n"
+accept_error_msg:
+    .ascii "[!] Unable to accept connection\n"
+http_200_response:
+    .ascii "HTTP/1.0 200 OK\r\n\r\n"
