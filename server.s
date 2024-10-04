@@ -225,6 +225,31 @@ memcpy:
         leave
         ret
 
+/*
+    strlen - Calculates the length of a null-terminated string (like the C `strlen` function).
+
+    Parameters:
+        @rdi(void *): Pointer to the null-terminated string.
+
+    Stack Frame:
+        =========RSP=========
+        [rbp-0x8]   char *: @rdi 
+        =========RBP=========
+*/
+strlen:
+    stack_frame 0x10 
+    mov QWORD PTR [rbp-0x8], rdi    # string
+    mov rax, rdi
+    strlen_continue:
+        cmp BYTE PTR [rax], 0    # check if current char NULL
+        je strlen_found
+        inc rax                  # inc string pointer and repeat check
+        jmp strlen_continue 
+    strlen_found:
+        sub rax, rdi             # count = string_end - string_start
+        leave
+        ret
+
 
 /* 
     swap_endian - Reverses the byte order (endianess) of a buffer.
