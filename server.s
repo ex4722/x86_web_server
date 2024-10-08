@@ -37,6 +37,19 @@ _start:
 
     jmp exit_success
 
+/*
+    read_request - Reads an HTTP request header from a socket, sends an HTTP 200 OK response, and closes the connection.
+
+    Parameters:
+        @rdi(u64): Socket file descriptor
+
+    Stack Frame:
+        =========RSP=========
+        [rbp-0x8]   u64: @rdi 
+        [rbp-REQUEST_LINE_SIZE] Buffer: Temporary buffer to store the HTTP request line (size: REQUEST_LINE_SIZE = 0x300)
+        =========RBP=========
+*/
+
 read_request:
     .equ REQUEST_LINE_SIZE, 0x300
     stack_frame   REQUEST_LINE_SIZE + 8
@@ -58,7 +71,6 @@ read_request:
     mov rdi, [rbp-0x8]         # socket descriptor 
     mov rax, SYS_close
     syscall
-
     leave
     ret
 
