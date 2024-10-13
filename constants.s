@@ -345,3 +345,8 @@
 .equ STDIN, 0
 .equ STDOUT, 1
 .equ STDERR, 2
+
+// open flags 
+.equ O_RDONLY, 0 
+.equ O_RDWR, 2 
+

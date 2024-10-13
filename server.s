@@ -45,31 +45,77 @@ _start:
 
     Stack Frame:
         =========RSP=========
+        [rsp] Buffer: Temporary buffer to store the HTTP request line (size: REQUEST_LINE_SIZE = 0x300)
+        [rsp+REQUEST_LINE_SIZE] Buffer: File path read in 
+        [rbp-0x18]   int:File descriptor
+        [rbp-0x10]   char*:Start of get path
         [rbp-0x8]   u64: @rdi 
-        [rbp-REQUEST_LINE_SIZE] Buffer: Temporary buffer to store the HTTP request line (size: REQUEST_LINE_SIZE = 0x300)
         =========RBP=========
 */
 
 read_request:
     .equ REQUEST_LINE_SIZE, 0x300
-    stack_frame   REQUEST_LINE_SIZE + 8
-    mov [rbp-0x8], rdi           # socket descriptor 
-    mov rax, SYS_read            # read http request header
-    mov rdx, REQUEST_LINE_SIZE-8 # current max size is 0x32
-    lea rsi, [rbp-REQUEST_LINE_SIZE]        # read onto stack buffer
+    .equ REQUESTS_SIZE,  REQUEST_LINE_SIZE * 2
+    stack_frame   REQUESTS_SIZE+ 0x18
+    mov [rbp-8], rdi           # socket descriptor 
+    mov rdx, REQUEST_LINE_SIZE
+    lea rsi, [rsp]        # read onto stack buffer
     mov rdi, [rbp-0x8]
+    mov rax, SYS_read            # read http request header
     syscall
 
+    # Find the first space to get file path 
+    mov rsi, ' '
+    lea rdi, [rsp]        # read onto stack buffer
+    call strchr
+
+    inc rax                  # currently at character, inc rax
+    mov [rbp-0x10], rax
+
+    mov rdi, rax
+    mov rsi, ' '
+    call strchr
+    # Null out string 
+    mov BYTE PTR [rax], 0 
+
+    mov rdi, [rbp-0x10]
+    mov rsi, O_RDONLY
+    mov rdx, 0
+    mov rax, SYS_open
+    syscall
+
+    mov [rbp-0x18], rax                # file path descriptor 
+    mov rdi, rax 
+    lea rsi, [rsp+REQUEST_LINE_SIZE]
+    mov rdx, REQUEST_LINE_SIZE
+    mov rax, SYS_read                  # read in file contents
+    syscall
+
+    mov rdi, [rbp-0x18]                 
+    mov rax, SYS_close                 # close file descriptor
+    syscall      
+
+
+    # parse request for string name, find start + insert NULL at end 
     lea rsi, [rip+http_200_response]
     mov rdi, rsi 
-    call strlen
+    call strlen                         # get length of http_200_response
     mov rdx, rax
-    mov rdi, [rbp-0x8]         # socket descriptor 
-    mov rax, SYS_write
+    mov rdi, [rbp-0x8]                  # socket descriptor 
+    mov rax, SYS_write                  # write HTTP response
     syscall
 
+    lea rsi, [rsp+REQUEST_LINE_SIZE]
+    mov rdi, rsi 
+    call strlen                         # get length of text file 
+    mov rdx, rax
+    mov rdi, [rbp-0x8]                  # socket descriptor 
+    mov rax, SYS_write                  # write HTTP response
+    syscall
+
+
     mov rdi, [rbp-0x8]         # socket descriptor 
-    mov rax, SYS_close
+    mov rax, SYS_close         # close socket descriptor
     syscall
     leave
     ret
@@ -298,7 +344,31 @@ strlen:
         leave
         ret
 
+/*
+    strchr- Searches for the first occurrence of a character in a null-terminated string.
 
+    Parameters:
+        @rdi(void *): Pointer to the null-terminated string.
+        @rsi(u8 char): Character to search 
+    Stack Frame:
+        =========RSP=========
+        [rbp-0x10]   char : @rsi 
+        [rbp-0x8]   char *: @rdi 
+        =========RBP=========
+*/
+strchr:
+    stack_frame 0x10
+    mov QWORD PTR [rbp-0x8], rdi    # string
+    mov QWORD PTR [rbp-0x10], rsi    # character to search
+    mov rax, rdi
+    strchr_continue:
+        cmp BYTE PTR [rax], sil    # check if current char NULL
+        je strchr_found
+        inc rax                  # inc string pointer and repeat check
+        jmp strchr_continue 
+    strchr_found:
+        leave
+        ret
 /* 
     swap_endian - Reverses the byte order (endianess) of a buffer.
     
