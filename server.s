@@ -12,6 +12,19 @@
 
     .section .text
 
+/*
+    _start - 
+
+    Parameters:
+        @rdi(u64): ??? 
+
+    Stack Frame:
+        =========RSP=========
+        [rbp-0x18]   u64: Socket descriptor from accept cal 
+        [rbp-0x10]   u64: Child PID 
+        [rbp-0x8]   u64: server socket descriptor
+        =========RBP=========
+*/
 _start:
     stack_frame 0x8
     call make_socket
@@ -27,15 +40,32 @@ _start:
     call socket_listen
     cmp rax, -1                # checks return of listen syscall
     jle listen_fail
+
 accept_loop:
     mov rdi, [rbp-0x8]
     call socket_accept 
     cmp rax, -1                # checks return of listen syscall
     jle socket_fail
+    mov [rbp-0x18], rax
 
-    mov rdi, rax 
-    call read_request
+    mov rax, SYS_fork
+    syscall
+    cmp rax, 0 
+    je child_loop 
+
+    mov rdi, [rbp-0x18] 
+    mov rax, SYS_close          # parent closes accepted file descriptor
+    syscall
+
     jmp accept_loop
+
+child_loop:
+    mov rdi, [rbp-0x8] 
+    mov rax, SYS_close          # child closes server file descriptor 
+
+    syscall
+    mov rdi, [rbp-0x18] 
+    call read_request
 
     jmp exit_success
 
