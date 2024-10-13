@@ -27,6 +27,7 @@ _start:
     call socket_listen
     cmp rax, -1                # checks return of listen syscall
     jle listen_fail
+accept_loop:
     mov rdi, [rbp-0x8]
     call socket_accept 
     cmp rax, -1                # checks return of listen syscall
@@ -34,6 +35,7 @@ _start:
 
     mov rdi, rax 
     call read_request
+    jmp accept_loop
 
     jmp exit_success
 
