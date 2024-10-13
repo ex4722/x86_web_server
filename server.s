@@ -110,20 +110,56 @@ read_request:
     # Null out string 
     mov BYTE PTR [rax], 0 
 
-    mov rdi, [rbp-0x10]
+    mov rdi, [rbp-8]
+    lea rsi, [rsp]
+    mov rdx, [rbp-0x10] 
+    call handle_GET_request
+
+
+
+    leave
+    ret
+
+
+handle_POST_request:
+
+/*
+    handle_GET_request - Takes in a HTTP POST request writes file to disk
+
+    Parameters:
+        @rdi(u64): Socket file descriptor
+        @rsi(char *): Points to start of HTTP request 
+        @rdx(char *): Points to start file name 
+
+    Stack Frame:
+        =========RSP=========
+        [rsp]       char *: File contents buffer
+        [rbp-0x20]   u64: File descriptor
+        [rbp-0x18]   u64: @rdx
+        [rbp-0x10]   u64: @rsi
+        [rbp-0x8]   u64: @rdi 
+        =========RBP=========
+*/
+handle_GET_request:
+    stack_frame REQUEST_LINE_SIZE + 0x18
+    mov [rbp-8], rdi           # socket descriptor 
+    mov [rbp-0x10], rsi           # Start of HTTP request 
+    mov [rbp-0x18], rdx           # Start of filename
+
+    mov rdi, [rbp-0x18]
     mov rsi, O_RDONLY
     mov rdx, 0
-    mov rax, SYS_open
+    mov rax, SYS_open            # Open file 
     syscall
 
-    mov [rbp-0x18], rax                # file path descriptor 
+    mov [rbp-0x20], rax                # file path descriptor 
     mov rdi, rax 
-    lea rsi, [rsp+REQUEST_LINE_SIZE]
+    lea rsi, [rsp]
     mov rdx, REQUEST_LINE_SIZE
     mov rax, SYS_read                  # read in file contents
     syscall
 
-    mov rdi, [rbp-0x18]                 
+    mov rdi, [rbp-0x20]                 
     mov rax, SYS_close                 # close file descriptor
     syscall      
 
@@ -137,7 +173,7 @@ read_request:
     mov rax, SYS_write                  # write HTTP response
     syscall
 
-    lea rsi, [rsp+REQUEST_LINE_SIZE]
+    lea rsi, [rsp]
     mov rdi, rsi 
     call strlen                         # get length of text file 
     mov rdx, rax
@@ -149,8 +185,11 @@ read_request:
     mov rdi, [rbp-0x8]         # socket descriptor 
     mov rax, SYS_close         # close socket descriptor
     syscall
-    leave
+
+    leave 
     ret
+
+
 
 socket_fail: 
     lea rdi, [rip+socket_error_msg]  # print socket error message
