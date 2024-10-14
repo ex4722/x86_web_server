@@ -79,7 +79,7 @@ child_loop:
         =========RSP=========
         [rsp] Buffer: Temporary buffer to store the HTTP request line (size: REQUEST_LINE_SIZE = 0x300)
         [rbp-0x18]   int:File descriptor
-        [rbp-0x10]   char*:Start of get path
+        [rbp-0x10]   char*:Start of request path
         [rbp-0x8]   u64: @rdi 
         =========RBP=========
 */
@@ -106,11 +106,21 @@ read_request:
     call strchr
     mov BYTE PTR [rax], 0           # Null out string 
 
+    lea rdi, [rip + POST_STRING]
+    lea rsi, [rsp]
+    call strcmp
     mov rdi, [rbp-8]
     lea rsi, [rsp]
     mov rdx, [rbp-0x10] 
-    call handle_POST_request
 
+    cmp rax, 0
+    je POST 
+    call handle_GET_request
+    leave 
+    ret
+
+POST:
+    call handle_POST_request
     leave
     ret
 
@@ -165,7 +175,6 @@ POST_data_found:
     mov [rbp-0x30], rsi
     mov rdi, rsi 
     call strlen
-
 
     mov rdx, rax           # count of bytes
     mov rax, SYS_write     # write into the file
