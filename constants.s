@@ -348,5 +348,6 @@
 
 // open flags 
 .equ O_RDONLY, 0 
+.equ O_WRONLY, 1 
 .equ O_RDWR, 2 
-
+.equ O_CREAT, 00000100

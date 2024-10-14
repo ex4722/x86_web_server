@@ -78,7 +78,6 @@ child_loop:
     Stack Frame:
         =========RSP=========
         [rsp] Buffer: Temporary buffer to store the HTTP request line (size: REQUEST_LINE_SIZE = 0x300)
-        [rsp+REQUEST_LINE_SIZE] Buffer: File path read in 
         [rbp-0x18]   int:File descriptor
         [rbp-0x10]   char*:Start of get path
         [rbp-0x8]   u64: @rdi 
@@ -87,8 +86,7 @@ child_loop:
 
 read_request:
     .equ REQUEST_LINE_SIZE, 0x300
-    .equ REQUESTS_SIZE,  REQUEST_LINE_SIZE * 2
-    stack_frame   REQUESTS_SIZE+ 0x18
+    stack_frame  REQUEST_LINE_SIZE + 0x18
     mov [rbp-8], rdi           # socket descriptor 
     mov rdx, REQUEST_LINE_SIZE
     lea rsi, [rsp]        # read onto stack buffer
@@ -100,28 +98,63 @@ read_request:
     mov rsi, ' '
     lea rdi, [rsp]        # read onto stack buffer
     call strchr
-
     inc rax                  # currently at character, inc rax
     mov [rbp-0x10], rax
 
     mov rdi, rax
     mov rsi, ' '
     call strchr
-    # Null out string 
-    mov BYTE PTR [rax], 0 
+    mov BYTE PTR [rax], 0           # Null out string 
 
     mov rdi, [rbp-8]
     lea rsi, [rsp]
     mov rdx, [rbp-0x10] 
-    call handle_GET_request
-
-
+    call handle_POST_request
 
     leave
     ret
 
 
+/*
+    handle_GET_request - Takes in a HTTP POST request writes file to disk
+
+    Parameters:
+        @rdi(u64): Socket file descriptor
+        @rsi(char *): Points to start of HTTP request 
+        @rdx(char *): Points to start file name 
+
+    Stack Frame:
+        =========RSP=========
+        [rbp-0x20]   u64: File descriptor
+        [rbp-0x18]   u64: @rdx
+        [rbp-0x10]   u64: @rsi
+        [rbp-0x8]   u64: @rdi 
+        =========RBP=========
+*/
 handle_POST_request:
+    stack_frame 0x20
+    mov [rbp-8], rdi           # socket descriptor 
+    mov [rbp-0x10], rsi           # Start of HTTP request 
+    mov [rbp-0x18], rdx           # Start of filename
+
+    lea rdi, [rip + POST_STRING]
+    mov rsi, [rbp-0x10]
+    call strcmp
+
+    mov rdi, [rbp-0x18]
+    mov rsi, (O_CREAT|O_WRONLY)
+    mov rdx, 0777
+    mov rax, SYS_open            # Open file 
+    syscall
+    mov [rbp-0x20], rax
+
+    
+
+
+    leave 
+    ret
+
+
 
 /*
     handle_GET_request - Takes in a HTTP POST request writes file to disk
@@ -414,7 +447,6 @@ strlen:
         sub rax, rdi             # count = string_end - string_start
         leave
         ret
-
 /*
     strchr- Searches for the first occurrence of a character in a null-terminated string.
 
@@ -440,6 +472,55 @@ strchr:
     strchr_found:
         leave
         ret
+
+
+/*
+    strcmp- Compares two strings and returns 0 if equal, negative if S1 less than S2, positive if s1 greater than s2
+    Loops through all characters in S1, if S2 is longer only compares up to strlen(S1)
+
+    Parameters:
+        @rdi(char *): Pointer to the null-terminated string S1
+        @rsi(char *): Pointer to the null-terminated string S2
+    Stack Frame:
+        =========RSP=========
+        [rbp-0x10]  char*: @rsi 
+        [rbp-0x8]   char*: @rdi 
+        =========RBP=========
+*/
+strcmp:
+    stack_frame 0x10 
+    mov QWORD PTR [rbp-0x8], rdi
+    mov QWORD PTR [rbp-0x10], rsi
+    call strlen
+    mov rdx, rax                       # store length of string in rdx
+    mov rdi, [rbp-0x8]
+    mov rsi, [rbp-0x10]
+    mov rbx, 0                         # store current string index
+
+strcmp_continue:
+    cmp rbx, rdx
+    je strcmp_equal                  # check if all of S1 has been compared already 
+
+    movzx rcx, BYTE PTR [rsi]        # use rcx to deref rsi
+    cmp BYTE PTR [rdi], cl
+    jne strcmp_not_equal
+    inc rdi 
+    inc rsi
+    inc rbx
+    jmp strcmp_continue
+
+strcmp_not_equal:
+    movzx rax, BYTE PTR [rdi]
+    sub rax, rcx
+    leave 
+    ret
+
+strcmp_equal:
+    mov rax, 0
+
+    leave
+    ret
+
 /* 
     swap_endian - Reverses the byte order (endianess) of a buffer.
     
@@ -499,3 +580,5 @@ accept_error_msg:
     .ascii "[!] Unable to accept connection\n"
 http_200_response:
     .ascii "HTTP/1.0 200 OK\r\n\r\n"
+POST_STRING:
+    .ascii "POST"
