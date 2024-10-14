@@ -125,6 +125,8 @@ read_request:
 
     Stack Frame:
         =========RSP=========
+        [rbp-0x30]   char *: POST Data of request
+        [rbp-0x28]   u64: Request search pointer 
         [rbp-0x20]   u64: File descriptor
         [rbp-0x18]   u64: @rdx
         [rbp-0x10]   u64: @rsi
@@ -132,14 +134,10 @@ read_request:
         =========RBP=========
 */
 handle_POST_request:
-    stack_frame 0x20
+    stack_frame 0x30
     mov [rbp-8], rdi           # socket descriptor 
     mov [rbp-0x10], rsi           # Start of HTTP request 
     mov [rbp-0x18], rdx           # Start of filename
-
-    lea rdi, [rip + POST_STRING]
-    mov rsi, [rbp-0x10]
-    call strcmp
 
     mov rdi, [rbp-0x18]
     mov rsi, (O_CREAT|O_WRONLY)
@@ -148,8 +146,44 @@ handle_POST_request:
     syscall
     mov [rbp-0x20], rax
 
-    
+    # find the start data which has '\n\r' 
+    lea rdi, [rip + REQUEST_HEADER_END]
+    mov rsi, [rbp-0x10]
 
+POST_data_not_found:
+    mov [rbp-0x28], rsi
+    call strcmp
+    mov rsi, [rbp-0x28]
+    cmp rax, 0 
+    je POST_data_found
+    inc rsi
+    lea rdi, [rip + REQUEST_HEADER_END]
+    jmp POST_data_not_found 
+
+POST_data_found:
+    add rsi, 4             # don't write the new lines characters
+    mov [rbp-0x30], rsi
+    mov rdi, rsi 
+    call strlen
+
+
+    mov rdx, rax           # count of bytes
+    mov rax, SYS_write     # write into the file
+    mov rdi, [rbp-0x20]    # file descriptor
+    mov rsi, [rbp-0x30]    # data to write
+    syscall
+
+    mov rdi, [rbp-0x20]    # file descriptor
+    mov rax, SYS_close
+    syscall
+
+    lea rsi, [rip+http_200_response]
+    mov rdi, rsi 
+    call strlen                         # get length of http_200_response
+    mov rdx, rax
+    mov rdi, [rbp-0x8]                  # socket descriptor 
+    mov rax, SYS_write                  # write HTTP response
+    syscall
 
     leave 
     ret
@@ -488,7 +522,7 @@ strchr:
         =========RBP=========
 */
 strcmp:
-    stack_frame 0x10 
+    stack_frame 0x10
     mov QWORD PTR [rbp-0x8], rdi
     mov QWORD PTR [rbp-0x10], rsi
     call strlen
@@ -571,14 +605,16 @@ swap_endian:
 
     .section .data
 socket_error_msg:
-    .ascii "[!] Unable to create socket\n"
+    .string "[!] Unable to create socket\n"
 bind_error_msg:
-    .ascii "[!] Unable to bind to socket\n"
+    .string "[!] Unable to bind to socket\n"
 listen_error_msg:
-    .ascii "[!] Unable to listen to socket\n"
+    .string "[!] Unable to listen to socket\n"
 accept_error_msg:
-    .ascii "[!] Unable to accept connection\n"
+    .string "[!] Unable to accept connection\n"
 http_200_response:
-    .ascii "HTTP/1.0 200 OK\r\n\r\n"
+    .string "HTTP/1.0 200 OK\r\n\r\n"
 POST_STRING:
-    .ascii "POST"
+    .string "POST"
+REQUEST_HEADER_END:
+    .string "\r\n\r\n"
